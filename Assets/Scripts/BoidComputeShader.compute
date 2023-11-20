@@ -1,0 +1,60 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+static const int threadGroupSize = 1024;
+
+    struct Boid {
+    float3 position;
+    float3 direction;
+
+    float3 flockHeading;
+    float3 flockCentre;
+    float3 separationHeading;
+    int numFlockmates;
+};
+
+RWStructuredBuffer<Boid> boids;
+int numBoids;
+float viewRadius;
+float avoidRadius;
+
+//1024 is vaak gekozen omdat het wel geschikt is voor veel tasks
+[numthreads(threadGroupSize,1,1)]
+//ID is de boid waar op dit moment de code op wordt uitgevoerd
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    for (int indexB = 0; indexB < numBoids; indexB ++) {
+    //dus als id (de boid die we nu checken) hetzelfde is als de boid waar we op
+    //dit moment mee vergelijken in de loop. dan willen we deze overslaan.
+        if (id.x != indexB) {
+        //assign de boid die we vergelijken tijdelijk aan boidB
+            Boid boidB = boids[indexB];
+
+            //kijk naar de dist tussen de current boid en boidB
+            float3 offset = boidB.position - boids[id.x].position;
+
+            //sqr (squared), wordt gerbuikt voor efficiency.
+            float sqrDst = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
+
+            //check if de boid waar we mee vergelijken binnen de viewradius is
+            //view radius is in het kwadraat omdat de dst dat ook is.
+            if (sqrDst < viewRadius * viewRadius) {
+            //als dat zo is dan is dat dus een flock mate (dus +1 want nog eentje bij de groep)
+                boids[id.x].numFlockmates += 1;
+
+                //voeg de dir en pos toe van boidB voor extra info zodat
+                //de boid meer info heeft over de general pos van de flock
+                boids[id.x].flockHeading += boidB.direction;
+                boids[id.x].flockCentre += boidB.position;
+
+
+                //check of boidB binnen de avoidRadius zit
+                if (sqrDst < avoidRadius * avoidRadius) {
+                    //zo ja, dan wijken we uit. Hoe dichter BoidB is bij de current Boid
+                    //hoe sterker we uitwijken (hoe kleiner de sqrDst hoe groter de offset)
+                    boids[id.x].separationHeading -= offset / sqrDst;
+                }
+            }
+        }
+    }
+}
